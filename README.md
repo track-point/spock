@@ -1,1 +1,1 @@
-# php-dependency-injector
+# Dependency injector
