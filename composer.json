@@ -1,0 +1,17 @@
+{
+	"name": "trackpoint/dependency-injector",
+	"description": "dependency injection library",
+	"type": "library",
+	"minimum-stability": "dev",
+	"require": {
+        "php": "^7.4",
+		"psr/log": "^1.0.1",
+		"psr/container": "^1.0.0",
+		"php-ds/php-ds": "dev-master"
+	},
+	"autoload": {
+		"psr-4":{
+			"Trackpoint\\DependencyInjector\\": "src/"
+		}
+	}
+}
