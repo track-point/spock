@@ -35,6 +35,8 @@ class Container implements ContainerInterface{
 	public function __construct(LoggerInterface $logger){
 
 		$this->services = new Map();
+		$this->bindings = new Map();
+
 		$this->logger = $logger;
 
 		$this->register($this);
