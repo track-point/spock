@@ -28,6 +28,8 @@ class Container implements ContainerInterface{
 	private const DC_INJECT_SETTER    = 'SETTER';
 
 	private Map $services;
+	private Map $bindings;
+
 	private LoggerInterface $logger;
 
 	public function __construct(LoggerInterface $logger){
@@ -182,6 +184,16 @@ class Container implements ContainerInterface{
 			return $this->services->get($name);
 		}
 
+		$concrete = $this->bindings->get($name, null);
+		if($concrete != null){
+			$name = $concrete;
+
+			if($this->has($name)){
+				return $this->services->get($name);
+			}
+
+		}
+
 		if(class_exists($name)==false){
 			throw new NotFoundException(sprintf('No entry or class found for "%s"',
 				$name));
@@ -210,5 +222,18 @@ class Container implements ContainerInterface{
 
 		return call_user_func_array([$instance, $method], $args);
 	}
+
+	public function bind($abstract, $concrete){
+		if($abstract[0] != '\\'){
+			$abstract = '\\'.$abstract;
+		}
+
+		if($concrete[0] != '\\'){
+			$concrete = '\\'.$concrete;
+		}
+
+		$this->bindings->put($abstract, $concrete);
+	}
+
 
 }
