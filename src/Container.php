@@ -24,8 +24,9 @@ class Container implements ContainerInterface{
 	private const DC_REGISTER_TYPE_SINGLETON = 'SINGLETON';
 	private const DC_REGISTER_TYPE_DENIED    = 'DENIED';
 	
-	private const DC_INJECT           = 'INJECT';
-	private const DC_INJECT_SETTER    = 'SETTER';
+	private const DC_INJECT          = 'INJECT';
+	private const DC_INJECT_REQUIRED = 'REQUIRED';
+	private const DC_INJECT_SETTER   = 'SETTER';
 
 	private Map $services;
 	private Map $bindings;
@@ -118,19 +119,28 @@ class Container implements ContainerInterface{
 			}
 
 			$metadata = DocComment::parse($comment);
-			$this->logger->debug('propertie DocComment metadata', $metadata);
 			
-			if(($options = @$metadata[Container::DC_NAMESPACE][Container::DC_INJECT]) === null){
+			$options = $metadata[Container::DC_NAMESPACE][Container::DC_INJECT] ?? null;
+			if($options == null){
 				continue;
 			}
 
-			if(isset($scope[$propertie->getName()]) || array_key_exists( $propertie->getName(), $scope)) {
+			$required = (bool) $options[self::DC_INJECT_REQUIRED] ?? false;
+
+			if(array_key_exists($propertie->getName(), $scope)) {
 				$dependence = $scope[$propertie->getName()];
 			}else if($propertie->hasType()){
 				$dependence = $this->get('\\'.$propertie->getType(), $scope);
 			}else{
+
+				if($required){
+					throw new ContainerException(sprintf('No value for required property %s',
+						$propertie->getName()));
+				}
+
 				continue;
 			}
+
 
 			/**
 			 * Esli u svojstva est setter to zavisemost naznachaetsja cherez nego
