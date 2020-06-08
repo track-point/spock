@@ -56,57 +56,30 @@ class Container implements ContainerInterface{
 		if(isset($scope[$name]) || array_key_exists($name, $scope)) {
 			return $scope[$name];
 		}else if($parameter->hasType()){
-			return $this->get('\\'.$parameter->getType(), $scope);
+
+			return $this->get((string) $parameter->getType(), $scope);
 		}
 
 		return null;
 	}
-
-	private function build($name, $scope = []){
-
-		$reflection = new ReflectionClass($name);
-		$short = $reflection->getShortName();
-		$metadata = DocComment::parse($reflection->getDocComment());
-
-		$this->logger->debug('class DocComment metadata', $metadata);
-
-		$register_type = $metadata[Container::DC_NAMESPACE][Container::DC_REGISTER][Container::DC_REGISTER_TYPE] ?? null;
-		if($register_type){
-			$register_type = strtoupper($register_type);
+	
+	private function getClassRegistrationType($metadata){
+		$type = $metadata[self::DC_NAMESPACE][self::DC_REGISTER][self::DC_REGISTER_TYPE] ?? null;
+		if($type == null){
+			return null;
 		}
 
+		return strtoupper($type);
+	}
 
-		if($register_type == Container::DC_REGISTER_TYPE_DENIED){
-			throw new ContainerException('Class is not allowed to be created through the dependency injector');
-		}
 
-		$constructor = $reflection->getConstructor();
-		$args = [];
-		if($constructor != null){
-			$this->logger->debug('class has a constructor',[
-				'short name' => $short,
-				'constructor' => var_export($constructor, true)
-			]);
+	private function getPropertyOptions($metadata){
+		return $metadata[self::DC_NAMESPACE][self::DC_INJECT] ?? null;
+	}
 
-			$parameters = $constructor->getParameters();
-			foreach($parameters as $parameter){
-				$args[] = $this->getArgumentByParametr($parameter, $scope);
-			}
-		}
 
-		$instance = $reflection->newInstanceArgs($args);
+	private function injectInstanceProperties($instance, $reflection, $scope){
 
-		if($register_type == Container::DC_REGISTER_TYPE_SINGLETON){
-			if($name[0] != '\\'){
-				$name = '\\'.$name;
-			}
-
-			$this->services[$name] = $instance;
-		}
-
-		/**
-		 * Poluchem vse svojstava klassa
-		 */
 		$properties = $reflection->getProperties();
 		foreach($properties as $propertie){
 
@@ -118,19 +91,17 @@ class Container implements ContainerInterface{
 				continue;
 			}
 
-			$metadata = DocComment::parse($comment);
-			
-			$options = $metadata[Container::DC_NAMESPACE][Container::DC_INJECT] ?? null;
+			$options = $this->getPropertyOptions(DocComment::parse($comment));
 			if($options == null){
 				continue;
 			}
 
-			$required = (bool) $options[self::DC_INJECT_REQUIRED] ?? false;
+			$required = (bool) ($options[self::DC_INJECT_REQUIRED] ?? false);
 
 			if(array_key_exists($propertie->getName(), $scope)) {
 				$dependence = $scope[$propertie->getName()];
 			}else if($propertie->hasType()){
-				$dependence = $this->get('\\'.$propertie->getType(), $scope);
+				$dependence = $this->get((string) $propertie->getType(), $scope);
 			}else{
 
 				if($required){
@@ -145,7 +116,7 @@ class Container implements ContainerInterface{
 			/**
 			 * Esli u svojstva est setter to zavisemost naznachaetsja cherez nego
 			 */
-			if(($setter = $options[Container::DC_INJECT_SETTER] ?? null)){
+			if(($setter = $options[self::DC_INJECT_SETTER] ?? null)){
 				if($reflection->hasMethod($setter) == false){
 					throw new ContainerException(sprintf('Unknown setter %s for %s',
 						$setter, 
@@ -161,8 +132,63 @@ class Container implements ContainerInterface{
 					$this->$name = $value;
 				})->call($instance, $propertie->getName(), $dependence);
 			}
+		}
+	}
 
 
+	private function callInstanceConstructor($instance, $reflection, $scope){
+		$constructor = $reflection->getConstructor();
+		if($constructor == null){
+			return;
+		}
+
+		$args = [];
+		$parameters = $constructor->getParameters();
+		foreach($parameters as $parameter){
+			$args[] = $this->getArgumentByParametr($parameter, $scope);
+		}
+
+		call_user_func_array([$instance,'__construct'], $args);
+	}
+
+
+
+	private function build($name, $scope = []){
+
+		$reflection = new ReflectionClass($name);
+		$short = $reflection->getShortName();
+		$metadata = DocComment::parse($reflection->getDocComment());
+
+		$this->logger->debug('class DocComment metadata', $metadata);
+
+		$register_type = $this->getClassRegistrationType($metadata);
+
+		if($register_type == self::DC_REGISTER_TYPE_DENIED){
+			throw new ContainerException('Class is not allowed to be created through the dependency injector');
+		}
+
+		/**
+		 * Sozdajemo instanc bez konstruktora
+		 */
+		$instance = $reflection->newInstanceWithoutConstructor();
+
+		$this->injectInstanceProperties(
+			$instance,
+			$reflection,
+			$scope);
+
+		$this->callInstanceConstructor(
+			$instance,
+			$reflection,
+			$scope);
+
+		
+		if($register_type == self::DC_REGISTER_TYPE_SINGLETON){
+			if($name[0] != '\\'){
+				$name = '\\'.$name;
+			}
+
+			$this->services->put($name, $instance);
 		}
 
 		return $instance;

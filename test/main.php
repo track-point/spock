@@ -70,9 +70,10 @@ $logger = new Logger();
 class Test1{
 
 	/**
-	 * @DI::inject()
+	 * @DI::inject(required=true);
 	 */
-	public Test2 $test;
+	private $abc;
+	//public Test2 $test;
 
 	public function __construct() {
 		error_log("Test1 - construct");
@@ -109,10 +110,12 @@ class Test2{
 $container = new Container($logger);
 $container->register($logger);
 
-$test2 = $container->get('\Test\Test2');
-$test1 = $container->get('\Test\Test1');
+$test2 = $container->get('\Test\Test2',[
+	'abc' => 123
+]);
+//$test1 = $container->get('\Test\Test1');
 
-$container->call($test2,'fobar');
+//$container->call($test2,'fobar');
 
 //var_dump($test1->test);
 //var_dump($test2->test);
@@ -121,4 +124,4 @@ $container->bind(LoggerInterface::class, Logger::class);
 $loger2 = $container->get(LoggerInterface::class);
 $loger2->debug('test');
 
-var_dump($loger2 === $logger);
+//var_dump($loger2 === $logger);
