@@ -4,6 +4,8 @@ namespace Test;
 
 use Trackpoint\DependencyInjector\Container;
 use Psr\Log\LoggerInterface;
+use Trackpoint\DependencyInjector\Register;
+use Trackpoint\DependencyInjector\Inject;
 
 include dirname(__DIR__).'/vendor/autoload.php';
 
@@ -67,16 +69,15 @@ class Logger implements LoggerInterface
 
 $logger = new Logger();
 
+#[Register(Register::SINGLETON)]
 class Test1{
+	private Logger $logger;
 
-	/**
-	 * @DI::inject(required=true);
-	 */
-	private $abc;
-	//public Test2 $test;
-
-	public function __construct() {
+	public function __construct(
+        Logger $logger
+    ) {
 		error_log("Test1 - construct");
+        $this->logger = $logger;
 	}
 }
 
@@ -90,15 +91,18 @@ class Test2{
 	 */
 	public Test1 $test;
 
-	public function __construct() {
+	public function __construct(
+        Test1 $test
+    ) {
 		error_log("Test2 - construct");
+        $this->test=$test;
 	}
 
-	public function setTest(Test1 $test){
 
-	}
-
-	public function fobar(Test1 $test, Test2 $test2){
+	public function fobar(
+        Test1 $test,
+        Test2 $test2
+    ){
 		error_log('fobar');
 		var_dump($test);
 		//var_dump($test2);
@@ -110,9 +114,11 @@ class Test2{
 $container = new Container($logger);
 $container->register($logger);
 
-$test2 = $container->get('\Test\Test2',[
-	'abc' => 123
-]);
+$test1 = $container->get(Test2::class);
+
+//$test2 = $container->get('\Test\Test2',[
+//	'abc' => 123
+//]);
 //$test1 = $container->get('\Test\Test1');
 
 //$container->call($test2,'fobar');
@@ -120,8 +126,8 @@ $test2 = $container->get('\Test\Test2',[
 //var_dump($test1->test);
 //var_dump($test2->test);
 
-$container->bind(LoggerInterface::class, Logger::class);
-$loger2 = $container->get(LoggerInterface::class);
-$loger2->debug('test');
+//$container->bind(LoggerInterface::class, Logger::class);
+//$loger2 = $container->get(LoggerInterface::class);
+//$loger2->debug('test');
 
 //var_dump($loger2 === $logger);

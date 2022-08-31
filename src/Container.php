@@ -2,6 +2,7 @@
 
 namespace Trackpoint\DependencyInjector;
 
+use ReflectionException;
 use Trackpoint\DependencyInjector\Exception\ContainerException;
 use Trackpoint\DependencyInjector\Exception\NotFoundException;
 
@@ -16,17 +17,6 @@ use Psr\Log\LoggerInterface;
 use Ds\Map;
 
 class Container implements ContainerInterface{
-
-	private const DC_NAMESPACE = 'DI';
-
-	private const DC_REGISTER  = 'REGISTER';
-	private const DC_REGISTER_TYPE = 'TYPE';
-	private const DC_REGISTER_TYPE_SINGLETON = 'SINGLETON';
-	private const DC_REGISTER_TYPE_DENIED    = 'DENIED';
-	
-	private const DC_INJECT          = 'INJECT';
-	private const DC_INJECT_REQUIRED = 'REQUIRED';
-	private const DC_INJECT_SETTER   = 'SETTER';
 
 	private Map $services;
 	private Map $bindings;
@@ -43,7 +33,10 @@ class Container implements ContainerInterface{
 		$this->register($this);
 	}
 
-	public function has($name) : bool{
+	public function has(
+        string $name
+    ):bool
+    {
 		if($name[0] != '\\'){
 			$name = '\\'.$name;
 		}
@@ -51,92 +44,41 @@ class Container implements ContainerInterface{
 		return $this->services->hasKey($name);
 	}
 
-	private function getArgumentByParametr(ReflectionParameter $parameter, $scope = []){
+	private function getArgumentByParameter(
+        ReflectionParameter $parameter,
+        $scope = []
+    ):object|null
+    {
 		$name = $parameter->getName();
 		if(isset($scope[$name]) || array_key_exists($name, $scope)) {
 			return $scope[$name];
 		}else if($parameter->hasType()){
-
 			return $this->get((string) $parameter->getType(), $scope);
 		}
 
 		return null;
 	}
 	
-	private function getClassRegistrationType($metadata){
-		$type = $metadata[self::DC_NAMESPACE][self::DC_REGISTER][self::DC_REGISTER_TYPE] ?? null;
-		if($type == null){
-			return null;
-		}
+	private function getClassRegistrationType(
+        ReflectionClass $reflection
+    ):Register
+    {
 
-		return strtoupper($type);
+        $registers = $reflection->getAttributes(Register::class);
+        if(empty($registers)){
+            return new Register();
+        }
+
+        return $registers[0]->newInstance();
 	}
 
+	private function callInstanceConstructor(
+        object $instance,
+        ReflectionClass $reflection,
+        array $scope
+    ):void
+    {
 
-	private function getPropertyOptions($metadata){
-		return $metadata[self::DC_NAMESPACE][self::DC_INJECT] ?? null;
-	}
-
-
-	private function injectInstanceProperties($instance, $reflection, $scope){
-
-		$properties = $reflection->getProperties();
-		foreach($properties as $propertie){
-
-			/**
-			 * Esli net metadannih dlja DI propuskaem
-			 */
-			$comment = $propertie->getDocComment();
-			if($comment == false){
-				continue;
-			}
-
-			$options = $this->getPropertyOptions(DocComment::parse($comment));
-			if($options == null){
-				continue;
-			}
-
-			$required = (bool) ($options[self::DC_INJECT_REQUIRED] ?? false);
-
-			if(array_key_exists($propertie->getName(), $scope)) {
-				$dependence = $scope[$propertie->getName()];
-			}else if($propertie->hasType()){
-				$dependence = $this->get((string) $propertie->getType(), $scope);
-			}else{
-
-				if($required){
-					throw new ContainerException(sprintf('No value for required property %s',
-						$propertie->getName()));
-				}
-
-				continue;
-			}
-
-
-			/**
-			 * Esli u svojstva est setter to zavisemost naznachaetsja cherez nego
-			 */
-			if(($setter = $options[self::DC_INJECT_SETTER] ?? null)){
-				if($reflection->hasMethod($setter) == false){
-					throw new ContainerException(sprintf('Unknown setter %s for %s',
-						$setter, 
-						$name));
-				}
-
-				(function ($name, $value) {
-					$this->$name($value);
-				})->call($instance, $setter, $dependence);
-
-			}else{
-				(function ($name, $value) {
-					$this->$name = $value;
-				})->call($instance, $propertie->getName(), $dependence);
-			}
-		}
-	}
-
-
-	private function callInstanceConstructor($instance, $reflection, $scope){
 		$constructor = $reflection->getConstructor();
 		if($constructor == null){
 			return;
@@ -145,26 +87,36 @@ class Container implements ContainerInterface{
 		$args = [];
 		$parameters = $constructor->getParameters();
 		foreach($parameters as $parameter){
-			$args[] = $this->getArgumentByParametr($parameter, $scope);
+			$args[] = $this->getArgumentByParameter(
+                $parameter,
+                $scope);
 		}
 
 		call_user_func_array([$instance,'__construct'], $args);
 	}
 
 
-
-	private function build($name, $scope = []){
+    /**
+     * @throws ReflectionException
+     * @throws ContainerException
+     */
+    private function build(
+        string $name,
+        array $scope = []
+    ):object
+    {
 
 		$reflection = new ReflectionClass($name);
-		$short = $reflection->getShortName();
-		$metadata = DocComment::parse($reflection->getDocComment());
 
-		$this->logger->debug('class DocComment metadata', $metadata);
+		//$short = $reflection->getShortName();
 
-		$register_type = $this->getClassRegistrationType($metadata);
+		//$this->logger->debug('class DocComment metadata', $metadata);
 
-		if($register_type == self::DC_REGISTER_TYPE_DENIED){
-			throw new ContainerException('Class is not allowed to be created through the dependency injector');
+		$register_type = $this->getClassRegistrationType(
+            $reflection);
+
+		if($register_type->isDenied()){
+			throw ContainerException::prohibitionToCreate();
 		}
 
 		/**
@@ -172,10 +124,11 @@ class Container implements ContainerInterface{
 		 */
 		$instance = $reflection->newInstanceWithoutConstructor();
 
-		$this->injectInstanceProperties(
-			$instance,
-			$reflection,
-			$scope);
+//Etot funkcional poka ubrana
+//		$this->injectInstanceProperties(
+//			$instance,
+//			$reflection,
+//			$scope);
 
 		$this->callInstanceConstructor(
 			$instance,
@@ -183,7 +136,7 @@ class Container implements ContainerInterface{
 			$scope);
 
 		
-		if($register_type == self::DC_REGISTER_TYPE_SINGLETON){
+		if($register_type->isSingleton()){
 			if($name[0] != '\\'){
 				$name = '\\'.$name;
 			}
@@ -194,7 +147,10 @@ class Container implements ContainerInterface{
 		return $instance;
 	}
 
-	public function register($instance):void{
+	public function register(
+        object $instance
+    ):void
+    {
 		$name = '\\'.get_class($instance);
 
 		$this->logger->debug('register class ', [
@@ -208,7 +164,11 @@ class Container implements ContainerInterface{
 		$this->services->put($name, $instance);
 	}
 
-	public function get($name, $scope = []){
+	public function get(
+        string $name,
+        $scope = []
+    ):object
+    {
 
 		if($name[0] != '\\'){
 			$name = '\\'.$name;
@@ -242,7 +202,14 @@ class Container implements ContainerInterface{
 		return $instance;
 	}
 
-	public function call($instance, $method, $scope = []){
+    /**
+     * @throws ReflectionException
+     */
+    public function call(
+        object $instance,
+        string $method,
+        $scope = []
+    ):mixed {
 		$name = '\\'.get_class($instance);
 		
 		$this->logger->debug('call instance method', [
@@ -255,13 +222,17 @@ class Container implements ContainerInterface{
 
 		$args = [];
 		foreach($parameters as $parameter){
-			$args[] = $this->getArgumentByParametr($parameter, $scope);
+			$args[] = $this->getArgumentByParameter($parameter, $scope);
 		}
 
 		return call_user_func_array([$instance, $method], $args);
 	}
 
-	public function bind($abstract, $concrete){
+	public function bind(
+        string $abstract,
+        string $concrete
+    ):void
+    {
 		if($abstract[0] != '\\'){
 			$abstract = '\\'.$abstract;
 		}

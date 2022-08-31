@@ -8,5 +8,10 @@ use Exception;
 
 class ContainerException extends Exception implements ContainerExceptionInterface{
 
+
+    public static function prohibitionToCreate(): ContainerException
+    {
+        return new self('Class is not allowed to be created through the dependency injector');
+    }
 }
 
